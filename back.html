@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<title>Pop! Jelly PangPang</title>
+<!--
+  [v999] 로그인 다리 페이지 — 로그인 서버(jpp-account)가 앱 딥링크 대신 여기로 보낸다.
+  왜: 안드로이드 Chrome(맞춤 탭)은 서버 리디렉트로 곧장 앱(com.jellypangpang.game://)을 여는 것을
+      사용자 탭 없이는 막는다 → Steam 로그인은 끝났는데 게임으로 안 돌아왔다(2026-09-11 재성님 폰 실측).
+  하는 일: 받은 값을 그대로 앱 주소에 붙여 ① 자동으로 한 번 열어 보고 ② 막히면 큰 버튼(사용자 탭)으로 연다.
+  보내는 곳은 앱 딥링크 하나뿐이다(to 허용 목록). 받은 값은 1회용 코드이고, 앱이 가진 검증자 없이는 쓸 수 없다.
+-->
+<style>
+  html,body{margin:0;height:100%}
+  body{display:flex;align-items:center;justify-content:center;background:#fff6e5;
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans KR","Noto Sans JP","Noto Sans SC",sans-serif;color:#5b3a1a}
+  .card{box-sizing:border-box;width:min(360px,calc(100% - 40px));padding:28px 22px 24px;border-radius:24px;background:#fffdf7;
+    box-shadow:0 6px 24px rgba(120,70,20,.16);text-align:center}
+  .emo{font-size:44px;line-height:1;margin-bottom:10px}
+  h1{font-size:21px;margin:0 0 8px;line-height:1.3}
+  p{font-size:15px;line-height:1.5;margin:0 0 20px;color:#8a6a4a}
+  a.btn{display:block;padding:16px 12px;border-radius:999px;background:linear-gradient(180deg,#ff72b4,#e8378a);color:#fff;
+    font-size:18px;font-weight:800;text-decoration:none;box-shadow:0 4px 0 #b8246a}
+  a.btn:active{transform:translateY(2px);box-shadow:0 2px 0 #b8246a}
+  [dir=rtl] .card{direction:rtl}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="emo" id="emo">🎉</div>
+  <h1 id="t"></h1>
+  <p id="s"></p>
+  <a class="btn" id="go" href="#"></a>
+</div>
+<script>
+(function () {
+  var T = {
+    ko: ['로그인 완료!', '버튼을 눌러 게임으로 돌아가세요.', '젤리팡팡으로 돌아가기', '로그인하지 못했어요', '게임으로 돌아가 다시 시도해 주세요.'],
+    en: ['Signed in!', 'Tap the button to go back to the game.', 'Back to Jelly PangPang', 'Sign-in did not finish', 'Go back to the game and try again.'],
+    ja: ['ログインしました！', 'ボタンを押してゲームに戻ってください。', 'ジェリーパンパンに戻る', 'ログインできませんでした', 'ゲームに戻って、もう一度お試しください。'],
+    zh: ['登录成功！', '点按按钮返回游戏。', '返回果冻砰砰', '登录未完成', '请返回游戏后重试。'],
+    'zh-Hant': ['登入成功！', '點按按鈕返回遊戲。', '返回果凍砰砰', '登入未完成', '請返回遊戲後再試一次。'],
+    ru: ['Вход выполнен!', 'Нажмите кнопку, чтобы вернуться в игру.', 'Вернуться в игру', 'Вход не завершён', 'Вернитесь в игру и попробуйте ещё раз.'],
+    ar: ['تم تسجيل الدخول!', 'اضغط الزر للعودة إلى اللعبة.', 'العودة إلى اللعبة', 'لم يكتمل تسجيل الدخول', 'عُد إلى اللعبة وحاول مرة أخرى.'],
+    de: ['Angemeldet!', 'Tippe auf die Schaltfläche, um zum Spiel zurückzukehren.', 'Zurück zum Spiel', 'Anmeldung nicht abgeschlossen', 'Kehre zum Spiel zurück und versuche es erneut.'],
+    es: ['¡Sesión iniciada!', 'Toca el botón para volver al juego.', 'Volver al juego', 'No se completó el inicio de sesión', 'Vuelve al juego e inténtalo de nuevo.'],
+    fr: ['Connecté !', 'Touchez le bouton pour revenir au jeu.', 'Revenir au jeu', 'La connexion n’a pas abouti', 'Revenez au jeu et réessayez.'],
+    it: ['Accesso effettuato!', 'Tocca il pulsante per tornare al gioco.', 'Torna al gioco', 'Accesso non completato', 'Torna al gioco e riprova.'],
+    pt: ['Login concluído!', 'Toque no botão para voltar ao jogo.', 'Voltar ao jogo', 'O login não foi concluído', 'Volte ao jogo e tente novamente.']
+  };
+  var nl = (navigator.language || 'en').toLowerCase();
+  var L = /^zh-(tw|hk|mo|hant)/.test(nl) ? 'zh-Hant' : nl.slice(0, 2);
+  var S = T[L] || T.en;
+  if (L === 'ar') document.documentElement.dir = 'rtl';
+  document.documentElement.lang = L;
+
+  var q = new URLSearchParams(location.search);
+  // [v1001] Supabase 는 실패(취소 포함)를 주소 해시(#error=…)로 돌려준다 — 앱 주소에는 해시를 붙일 수 없어서
+  //         (안드로이드 intent 가 # 뒤를 쓴다) 쿼리로 옮겨 넘긴다. 게임은 쿼리·해시 둘 다 읽는다.
+  try {
+    new URLSearchParams((location.hash || '').replace(/^#/, '')).forEach(function (v, k) { if (!q.has(k)) q.append(k, v); });
+  } catch (e) {}
+  var to = q.get('to') || '';
+  var t = document.getElementById('t'), s = document.getElementById('s'), a = document.getElementById('go');
+  // 앱 딥링크 한 곳만 받는다 — 이 페이지가 아무 데로나 보내는 발판이 되지 않게
+  if (!/^com\.jellypangpang\.game:\/\/auth$/.test(to)) {
+    t.textContent = S[3]; s.textContent = S[4]; a.style.display = 'none';
+    document.getElementById('emo').textContent = '🙏';
+    return;
+  }
+  q.delete('to');
+  var rest = q.toString();
+  var bad = q.has('jpp_err') || q.has('error');
+  t.textContent = bad ? S[3] : S[0];
+  s.textContent = bad ? S[4] : S[1];
+  a.textContent = S[2];
+  if (bad) document.getElementById('emo').textContent = '🙏';
+  var direct = to + (rest ? '?' + rest : '');
+  // 안드로이드는 intent:// 로 — 이 앱(package)만 열고, 사용자 탭이면 Chrome 이 막지 않는다
+  var href = /Android/i.test(navigator.userAgent)
+    ? 'intent://auth' + (rest ? '?' + rest : '') + '#Intent;scheme=com.jellypangpang.game;package=com.jellypangpang.game;end'
+    : direct;
+  a.href = href;
+  // 자동으로 한 번 — 막히면(탭 없는 이동) 버튼이 남는다. iOS 의 로그인 창은 이 이동을 스스로 가로챈다.
+  setTimeout(function () { try { location.href = href; } catch (e) {} }, 60);
+})();
+</script>
+</body>
+</html>
